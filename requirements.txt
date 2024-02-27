@@ -1,7 +1,7 @@
-numpy 
+altair
 pandas
-pandas_ta
-yfinance
 streamlit
-pandas_market_calendars
+vectorbt
 quantstats
+weasyprint
+matplotlib
