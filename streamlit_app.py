@@ -79,40 +79,47 @@ def get_stock_data(ticker, start_date, end_date):
         
         # Try different possible column names
         if 'Adj Close' in df.columns:
-            return df['Adj Close'], None
+            return df['Adj Close'].resample('D').last().fillna(method='ffill'), None
         elif 'Close' in df.columns:
-            return df['Close'], None
+            return df['Close'].resample('D').last().fillna(method='ffill'), None
         else:
             return None, f"Could not find price data for {ticker}"
             
     except Exception as e:
         return None, str(e)
 
-def align_data(stock_data, benchmark_data):
-    """Align stock and benchmark data to have the same dates"""
+def prepare_data(stock_data, benchmark_data):
+    """Prepare and align data for QuantStats"""
+    # Convert to daily returns
+    stock_returns = stock_data.pct_change().dropna()
+    benchmark_returns = benchmark_data.pct_change().dropna()
+    
     # Get common dates
-    common_dates = stock_data.index.intersection(benchmark_data.index)
+    common_dates = stock_returns.index.intersection(benchmark_returns.index)
     
     # Reindex both series to common dates
-    stock_data = stock_data[common_dates]
-    benchmark_data = benchmark_data[common_dates]
+    stock_returns = stock_returns[common_dates]
+    benchmark_returns = benchmark_returns[common_dates]
     
-    return stock_data, benchmark_data
+    return stock_returns, benchmark_returns
 
 def generate_quantstats_report(stock_data, benchmark_data, report_type):
     """Generate QuantStats report and return HTML content directly"""
     try:
+        # Prepare data
+        stock_returns, benchmark_returns = prepare_data(stock_data, benchmark_data)
+        
         # Create a StringIO object to capture the HTML output
         from io import StringIO
         output = StringIO()
         
         # Generate the report based on type
         if report_type == "Basic":
-            qs.reports.basic(stock_data, benchmark_data, output=output)
+            qs.reports.basic(stock_returns, benchmark_returns, output=output)
         elif report_type == "Full":
-            qs.reports.full(stock_data, benchmark_data, output=output)
+            qs.reports.full(stock_returns, benchmark_returns, output=output)
         else:  # Detailed
-            qs.reports.html(stock_data, benchmark_data, output=output)
+            qs.reports.html(stock_returns, benchmark_returns, output=output)
         
         # Get the HTML content
         html_content = output.getvalue()
@@ -136,9 +143,6 @@ if st.button("Generate Report"):
             else:
                 # Display data info
                 st.info(f"Retrieved {len(stock_data)} data points for {ticker} and {len(benchmark_data)} for {benchmark}")
-                
-                # Align the data
-                stock_data, benchmark_data = align_data(stock_data, benchmark_data)
                 
                 with st.spinner("Generating report..."):
                     # Generate the report
