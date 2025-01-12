@@ -60,20 +60,31 @@ def download_stock_data(ticker, start_date, end_date):
         if data.empty:
             return None, f"No data available for {ticker}."
 
-        # Check for the column to use
-        price_column = None
-        if "Adj Close" in data.columns:
-            price_column = "Adj Close"
-        elif "Close" in data.columns:
-            price_column = "Close"
+        # Handle multi-level columns
+        if isinstance(data.columns, pd.MultiIndex):
+            # Extract the column corresponding to the ticker
+            if ("Adj Close", ticker) in data.columns:
+                price_column = ("Adj Close", ticker)
+            elif ("Close", ticker) in data.columns:
+                price_column = ("Close", ticker)
+            else:
+                return None, f"No suitable price column ('Adj Close' or 'Close') found for {ticker}."
+            prices = data[price_column]
         else:
-            return None, f"No suitable price column ('Adj Close' or 'Close') found for {ticker}."
+            # Single-level column handling
+            if "Adj Close" in data.columns:
+                prices = data["Adj Close"]
+            elif "Close" in data.columns:
+                prices = data["Close"]
+            else:
+                return None, f"No suitable price column ('Adj Close' or 'Close') found for {ticker}."
 
         # Calculate returns
-        returns = data[price_column].pct_change().dropna()
+        returns = prices.pct_change().dropna()
         return returns, None
     except Exception as e:
         return None, f"Error fetching data for {ticker}: {e}"
+
 
 
 
