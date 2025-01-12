@@ -74,6 +74,9 @@ def get_stock_data(ticker, start_date, end_date):
         if df.empty:
             return None, f"No data found for {ticker}"
             
+        # Convert index timezone to UTC and then remove timezone info
+        df.index = df.index.tz_convert('UTC').tz_localize(None)
+        
         # Try different possible column names
         if 'Adj Close' in df.columns:
             return df['Adj Close'], None
@@ -85,9 +88,23 @@ def get_stock_data(ticker, start_date, end_date):
     except Exception as e:
         return None, str(e)
 
+def align_data(stock_data, benchmark_data):
+    """Align stock and benchmark data to have the same dates"""
+    # Get common dates
+    common_dates = stock_data.index.intersection(benchmark_data.index)
+    
+    # Reindex both series to common dates
+    stock_data = stock_data[common_dates]
+    benchmark_data = benchmark_data[common_dates]
+    
+    return stock_data, benchmark_data
+
 def generate_report(stock_data, benchmark_data, report_type, output_file):
     """Wrapper function to generate reports with error handling"""
     try:
+        # Align the data first
+        stock_data, benchmark_data = align_data(stock_data, benchmark_data)
+        
         if report_type == "Basic":
             qs.reports.basic(stock_data, benchmark_data, output=output_file)
         elif report_type == "Full":
@@ -111,6 +128,9 @@ if st.button("Generate Report"):
             if bench_error:
                 st.error(f"Error fetching benchmark data: {bench_error}")
             else:
+                # Display data info
+                st.info(f"Retrieved {len(stock_data)} data points for {ticker} and {len(benchmark_data)} for {benchmark}")
+                
                 # Create temporary directory for report
                 with tempfile.TemporaryDirectory() as tmpdir:
                     report_path = os.path.join(tmpdir, f"{ticker}_report.html")
