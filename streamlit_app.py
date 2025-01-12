@@ -5,6 +5,13 @@ import pandas as pd
 from datetime import datetime, timedelta
 import tempfile
 import os
+import warnings
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
+
+# Configure QuantStats to use HTML display
+qs.extend_pandas()
 
 # Configure the page
 st.set_page_config(
@@ -54,59 +61,69 @@ report_type = st.radio(
     horizontal=True
 )
 
-if st.button("Generate Report"):
+def get_stock_data(ticker, start_date, end_date):
+    """Fetch stock data with error handling and column checking"""
     try:
-        with st.spinner(f"Fetching data and generating report for {ticker}..."):
-            # Fetch data
-            stock_data = yf.download(
-                ticker,
-                start=start_date,
-                end=end_date,
-                progress=False
-            )['Adj Close']
+        # Create ticker object
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Get historical data
+        df = ticker_obj.history(start=start_date, end=end_date)
+        
+        # Check if df is empty
+        if df.empty:
+            return None, f"No data found for {ticker}"
             
-            benchmark_data = yf.download(
-                benchmark,
-                start=start_date,
-                end=end_date,
-                progress=False
-            )['Adj Close']
+        # Try different possible column names
+        if 'Adj Close' in df.columns:
+            return df['Adj Close'], None
+        elif 'Close' in df.columns:
+            return df['Close'], None
+        else:
+            return None, f"Could not find price data for {ticker}"
             
-            # Create temporary directory for report
-            with tempfile.TemporaryDirectory() as tmpdir:
-                # Generate report based on selection
-                if report_type == "Basic":
-                    report_path = os.path.join(tmpdir, f"{ticker}_basic_report.html")
-                    qs.reports.basic(
-                        stock_data,
-                        benchmark_data,
-                        output=report_path
-                    )
-                elif report_type == "Full":
-                    report_path = os.path.join(tmpdir, f"{ticker}_full_report.html")
-                    qs.reports.full(
-                        stock_data,
-                        benchmark_data,
-                        output=report_path
-                    )
-                else:  # Detailed
-                    report_path = os.path.join(tmpdir, f"{ticker}_detailed_report.html")
-                    qs.reports.html(
-                        stock_data,
-                        benchmark_data,
-                        output=report_path
-                    )
-                
-                # Read the generated report
-                with open(report_path, 'r', encoding='utf-8') as f:
-                    report_html = f.read()
-                
-                # Display the report
-                st.components.v1.html(report_html, height=800, scrolling=True)
-
     except Exception as e:
-        st.error(f"Error occurred: {str(e)}")
-        st.info("Please check if the ticker symbol is valid and try again.")
+        return None, str(e)
+
+def generate_report(stock_data, benchmark_data, report_type, output_file):
+    """Wrapper function to generate reports with error handling"""
+    try:
+        if report_type == "Basic":
+            qs.reports.basic(stock_data, benchmark_data, output=output_file)
+        elif report_type == "Full":
+            qs.reports.full(stock_data, benchmark_data, output=output_file)
+        else:  # Detailed
+            qs.reports.html(stock_data, benchmark_data, output=output_file)
+        return True
+    except Exception as e:
+        st.error(f"Error generating report: {str(e)}")
+        return False
+
+if st.button("Generate Report"):
+    with st.spinner(f"Fetching data for {ticker}..."):
+        # Fetch stock data
+        stock_data, stock_error = get_stock_data(ticker, start_date, end_date)
+        if stock_error:
+            st.error(f"Error fetching {ticker} data: {stock_error}")
+        else:
+            # Fetch benchmark data
+            benchmark_data, bench_error = get_stock_data(benchmark, start_date, end_date)
+            if bench_error:
+                st.error(f"Error fetching benchmark data: {bench_error}")
+            else:
+                # Create temporary directory for report
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    report_path = os.path.join(tmpdir, f"{ticker}_report.html")
+                    
+                    with st.spinner("Generating report..."):
+                        if generate_report(stock_data, benchmark_data, report_type, report_path):
+                            try:
+                                with open(report_path, 'r', encoding='utf-8') as f:
+                                    report_html = f.read()
+                                # Display the report
+                                st.components.v1.html(report_html, height=800, scrolling=True)
+                            except Exception as e:
+                                st.error(f"Error reading report file: {str(e)}")
 
 # Add information about the app
 st.markdown("---")
