@@ -1,64 +1,135 @@
 import streamlit as st
 import yfinance as yf
 import quantstats as qs
+import pandas as pd
+from datetime import datetime, timedelta
+import tempfile
 import os
 
-def main():
-    # Streamlit app title
-    st.title("QuantStats Report Generator")
+# Configure the page
+st.set_page_config(
+    page_title="Stock/ETF Analysis with QuantStats",
+    page_icon="📈",
+    layout="wide"
+)
 
-    # Input field for the stock/ETF ticker
-    ticker = st.text_input("Enter the Stock/ETF ticker (Yahoo Finance):", "AAPL")
+# Main title
+st.title("📊 Stock/ETF Performance Analysis")
+st.markdown("Generate detailed performance analysis reports for any stock or ETF listed on Yahoo Finance.")
 
-    # Input field for the start and end dates
-    start_date = st.date_input("Start Date:", value=None)
-    end_date = st.date_input("End Date:", value=None)
+# Input section
+col1, col2, col3 = st.columns(3)
 
-    # Button to generate report
-    if st.button("Generate QuantStats Report"):
-        if not ticker:
-            st.error("Please enter a valid ticker.")
-        elif not start_date or not end_date:
-            st.error("Please select both start and end dates.")
-        else:
-            try:
-                # Fetch historical stock data
-                st.write(f"Fetching data for {ticker}...")
-                data = yf.download(ticker, start=start_date, end=end_date)
+with col1:
+    ticker = st.text_input("Enter Stock/ETF Symbol:", value="SPY").upper()
+    
+with col2:
+    start_date = st.date_input(
+        "Start Date:",
+        value=datetime.now() - timedelta(days=365*3)
+    )
+    
+with col3:
+    end_date = st.date_input(
+        "End Date:",
+        value=datetime.now()
+    )
 
-                if data.empty:
-                    st.error("No data found for the given ticker and date range.")
-                else:
-                    # Calculate daily returns
-                    st.write("Calculating returns...")
-                    returns = data["Adj Close"].pct_change().dropna()
+# Benchmark selection
+benchmark = st.selectbox(
+    "Select Benchmark:",
+    options=["SPY", "^GSPC", "^DJI", "^IXIC"],
+    format_func=lambda x: {
+        "SPY": "S&P 500 ETF (SPY)",
+        "^GSPC": "S&P 500 Index (^GSPC)",
+        "^DJI": "Dow Jones Industrial Average (^DJI)",
+        "^IXIC": "NASDAQ Composite (^IXIC)"
+    }[x]
+)
 
-                    # Generate QuantStats report
-                    st.write("Generating QuantStats report...")
+# Report type selection
+report_type = st.radio(
+    "Select Report Type:",
+    ["Basic", "Full", "Detailed"],
+    horizontal=True
+)
 
-                    report_path = f"quantstats_report_{ticker}.html"
-                    qs.reports.html(returns, output=report_path, title=f"QuantStats Report for {ticker}")
+if st.button("Generate Report"):
+    try:
+        with st.spinner(f"Fetching data and generating report for {ticker}..."):
+            # Fetch data
+            stock_data = yf.download(
+                ticker,
+                start=start_date,
+                end=end_date,
+                progress=False
+            )['Adj Close']
+            
+            benchmark_data = yf.download(
+                benchmark,
+                start=start_date,
+                end=end_date,
+                progress=False
+            )['Adj Close']
+            
+            # Create temporary directory for report
+            with tempfile.TemporaryDirectory() as tmpdir:
+                # Generate report based on selection
+                if report_type == "Basic":
+                    report_path = os.path.join(tmpdir, f"{ticker}_basic_report.html")
+                    qs.reports.basic(
+                        stock_data,
+                        benchmark_data,
+                        output=report_path
+                    )
+                elif report_type == "Full":
+                    report_path = os.path.join(tmpdir, f"{ticker}_full_report.html")
+                    qs.reports.full(
+                        stock_data,
+                        benchmark_data,
+                        output=report_path
+                    )
+                else:  # Detailed
+                    report_path = os.path.join(tmpdir, f"{ticker}_detailed_report.html")
+                    qs.reports.html(
+                        stock_data,
+                        benchmark_data,
+                        output=report_path
+                    )
+                
+                # Read the generated report
+                with open(report_path, 'r', encoding='utf-8') as f:
+                    report_html = f.read()
+                
+                # Display the report
+                st.components.v1.html(report_html, height=800, scrolling=True)
 
-                    # Display link to download the report
-                    st.success("Report generated successfully!")
-                    with open(report_path, "rb") as file:
-                        st.download_button(
-                            label="Download QuantStats Report",
-                            data=file,
-                            file_name=f"QuantStats_Report_{ticker}.html",
-                            mime="text/html",
-                        )
+    except Exception as e:
+        st.error(f"Error occurred: {str(e)}")
+        st.info("Please check if the ticker symbol is valid and try again.")
 
-                    # Show preview of the report in an iframe
-                    st.write("Preview of the QuantStats Report:")
-                    with open(report_path, "r") as f:
-                        st.components.v1.html(f.read(), height=800, scrolling=True)
+# Add information about the app
+st.markdown("---")
+st.markdown("""
+### 📝 About This App
+This app uses the following Python libraries:
+- **QuantStats**: For generating comprehensive investment analytics and reports
+- **yfinance**: For fetching financial data from Yahoo Finance
+- **Streamlit**: For creating the web interface
 
-                    # Clean up the generated HTML file
-                    os.remove(report_path)
+### 💡 How to Use
+1. Enter a valid stock/ETF symbol (e.g., AAPL, SPY, QQQ)
+2. Select your desired date range
+3. Choose a benchmark for comparison
+4. Select the type of report you want to generate
+5. Click 'Generate Report' to view the analysis
 
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
+### ⚠️ Note
+- Data is sourced from Yahoo Finance
+- Some tickers might not be available or have limited data
+- Generating detailed reports might take a few moments
+""")
 
-if __name__ == "__main__":
-    main()
+# Footer
+st.markdown("---")
+st.markdown("Created with ❤️ using Streamlit and QuantStats")
