@@ -86,22 +86,25 @@ def download_stock_data(ticker, start_date, end_date):
         return None, f"Error fetching data for {ticker}: {e}"
 
 def generate_quantstats_report(returns, benchmark_returns, report_type):
-    """Generate QuantStats report."""
+    """Generate QuantStats report and return HTML content."""
     try:
-        from io import StringIO
-        output = StringIO()
         if report_type == "Basic":
-            qs.reports.metrics(returns, mode="basic", benchmark=benchmark_returns, output=output)
+            # Generate basic metrics report
+            return qs.reports.metrics(returns, benchmark=benchmark_returns, mode="basic")
         elif report_type == "Full":
-            qs.reports.full(returns, benchmark=benchmark_returns, output=output)
+            # Generate full QuantStats report
+            return qs.reports.full(returns, benchmark=benchmark_returns, output=None)
+        elif report_type == "Detailed":
+            # Generate detailed QuantStats HTML report
+            return qs.reports.html(returns, benchmark=benchmark_returns, output=None)
         else:
-            qs.reports.html(returns, benchmark=benchmark_returns, output=output)
-        return output.getvalue()
+            raise ValueError(f"Invalid report type: {report_type}")
     except Exception as e:
-        return f"Error generating QuantStats report: {e}"
+        raise Exception(f"Error generating QuantStats report: {e}")
 
 if st.button("Generate Report"):
     with st.spinner(f"Fetching data for {ticker} and {benchmark}..."):
+        # Fetch stock and benchmark returns
         stock_returns, stock_error = download_stock_data(ticker, start_date, end_date)
         benchmark_returns, bench_error = download_stock_data(benchmark, start_date, end_date)
 
@@ -113,29 +116,19 @@ if st.button("Generate Report"):
             st.info(f"Fetched {len(stock_returns)} data points for {ticker}.")
             st.info(f"Fetched {len(benchmark_returns)} data points for {benchmark}.")
 
-            # Convert benchmark to returns series or None
-            if benchmark_returns is not None:
-                benchmark = benchmark_returns
-            else:
-                benchmark = None
-
             with st.spinner("Generating QuantStats report..."):
                 try:
                     # Generate the report
-                    if report_type == "Detailed":
-                        html_content = qs.reports.html(stock_returns, benchmark=benchmark, output=None)
-                    elif report_type == "Full":
-                        html_content = qs.reports.full(stock_returns, benchmark=benchmark, output=None)
-                    else:
-                        html_content = qs.reports.metrics(stock_returns, benchmark=benchmark, mode="basic")
+                    report_html = generate_quantstats_report(stock_returns, benchmark_returns, report_type)
 
-                    # Display the report
-                    if html_content:
-                        st.components.v1.html(html_content, height=800, scrolling=True)
+                    # Display the report in the Streamlit app
+                    if report_html:
+                        st.components.v1.html(report_html, height=800, scrolling=True)
                     else:
-                        st.error("Failed to generate report.")
+                        st.error("Failed to generate report content.")
                 except Exception as e:
                     st.error(f"Error generating QuantStats report: {e}")
+
 
 
 st.markdown("---")
