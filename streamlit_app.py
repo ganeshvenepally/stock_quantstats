@@ -60,33 +60,14 @@ report_type = st.radio(
     horizontal=True
 )
 
-def get_stock_data(ticker, start_date, end_date):
-    """Fetch stock data with error handling and column checking"""
+def download_stock_data(ticker, start_date, end_date):
+    """Download stock data using QuantStats utils"""
     try:
-        # Create ticker object
-        ticker_obj = yf.Ticker(ticker)
+        # Use QuantStats' built-in download function
+        returns = qs.utils.download_returns(ticker, start=start_date, end=end_date)
         
-        # Get historical data
-        df = ticker_obj.history(start=start_date, end=end_date)
-        
-        # Check if df is empty
-        if df.empty:
+        if returns is None or returns.empty:
             return None, f"No data found for {ticker}"
-            
-        # Convert index timezone to UTC and then remove timezone info
-        if df.index.tz is not None:
-            df.index = df.index.tz_convert('UTC').tz_localize(None)
-        
-        # Try different possible column names
-        if 'Adj Close' in df.columns:
-            prices = df['Adj Close']
-        elif 'Close' in df.columns:
-            prices = df['Close']
-        else:
-            return None, f"Could not find price data for {ticker}"
-            
-        # Calculate returns
-        returns = prices.pct_change().fillna(0)
         
         return returns, None
             
@@ -98,14 +79,15 @@ def generate_basic_report(returns, benchmark_returns):
     try:
         metrics = pd.DataFrame(columns=['Metric', 'Value'])
         
-        # Calculate basic metrics
-        metrics.loc[len(metrics)] = ['Total Return', f"{(returns + 1).prod() - 1:.2%}"]
-        metrics.loc[len(metrics)] = ['Annual Volatility', f"{returns.std() * np.sqrt(252):.2%}"]
+        # Calculate basic metrics using QuantStats
+        metrics.loc[len(metrics)] = ['Total Return', f"{qs.stats.comp(returns):.2%}"]
+        metrics.loc[len(metrics)] = ['Annual Volatility', f"{qs.stats.volatility(returns):.2%}"]
         metrics.loc[len(metrics)] = ['Sharpe Ratio', f"{qs.stats.sharpe(returns):.2f}"]
         metrics.loc[len(metrics)] = ['Max Drawdown', f"{qs.stats.max_drawdown(returns):.2%}"]
-        metrics.loc[len(metrics)] = ['Win Rate', f"{(returns > 0).mean():.2%}"]
-        metrics.loc[len(metrics)] = ['Best Day', f"{returns.max():.2%}"]
-        metrics.loc[len(metrics)] = ['Worst Day', f"{returns.min():.2%}"]
+        metrics.loc[len(metrics)] = ['Win Rate', f"{qs.stats.win_rate(returns):.2%}"]
+        metrics.loc[len(metrics)] = ['Risk of Ruin', f"{qs.stats.risk_of_ruin(returns):.2%}"]
+        metrics.loc[len(metrics)] = ['Value at Risk', f"{qs.stats.var(returns):.2%}"]
+        metrics.loc[len(metrics)] = ['Expected Return (Monthly)', f"{qs.stats.expected_return(returns):.2%}"]
         
         # Convert to HTML
         html = f"""
@@ -127,31 +109,29 @@ def generate_quantstats_report(returns, benchmark_returns, report_type):
         
         if report_type == "Basic":
             return generate_basic_report(returns, benchmark_returns)
-        else:
-            # For Full and Detailed reports, use QuantStats
-            qs.reports.html(
-                returns, 
-                benchmark_returns,
-                output=output,
-                title=f"{ticker} Analysis vs {benchmark}"
-            )
+        elif report_type == "Full":
+            qs.reports.full(returns, benchmark_returns, output=output)
+            content = output.getvalue()
+            output.close()
+            return content
+        else:  # Detailed
+            qs.reports.html(returns, benchmark_returns, output=output)
+            content = output.getvalue()
+            output.close()
+            return content
             
-        html_content = output.getvalue()
-        output.close()
-        return html_content
-        
     except Exception as e:
         raise Exception(f"Error generating report: {str(e)}")
 
 if st.button("Generate Report"):
     with st.spinner(f"Fetching data for {ticker}..."):
         # Fetch stock data
-        stock_returns, stock_error = get_stock_data(ticker, start_date, end_date)
+        stock_returns, stock_error = download_stock_data(ticker, start_date, end_date)
         if stock_error:
             st.error(f"Error fetching {ticker} data: {stock_error}")
         else:
             # Fetch benchmark data
-            benchmark_returns, bench_error = get_stock_data(benchmark, start_date, end_date)
+            benchmark_returns, bench_error = download_stock_data(benchmark, start_date, end_date)
             if bench_error:
                 st.error(f"Error fetching benchmark data: {bench_error}")
             else:
