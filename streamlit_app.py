@@ -61,13 +61,21 @@ report_type = st.radio(
 )
 
 def download_stock_data(ticker, start_date, end_date):
-    """Download stock data using QuantStats utils"""
+    """Download stock data using yfinance and convert to returns"""
     try:
-        # Use QuantStats' built-in download function
-        returns = qs.utils.download_returns(ticker, start=start_date, end=end_date)
+        # Download data using yfinance
+        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
         
-        if returns is None or returns.empty:
+        if df.empty:
             return None, f"No data found for {ticker}"
+        
+        # Calculate returns from Adj Close prices
+        returns = df['Adj Close'].pct_change()
+        returns = returns.dropna()
+        
+        # Convert index timezone to UTC and then remove timezone info
+        if returns.index.tz is not None:
+            returns.index = returns.index.tz_convert('UTC').tz_localize(None)
         
         return returns, None
             
