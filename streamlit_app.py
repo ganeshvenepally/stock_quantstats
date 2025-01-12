@@ -49,17 +49,27 @@ report_type = st.radio(
 )
 
 def download_stock_data(ticker, start_date, end_date):
-    """Download stock data from Yahoo Finance."""
+    """Download stock data from Yahoo Finance and calculate returns."""
     try:
         data = yf.download(ticker, start=start_date, end=end_date, progress=False)
         if data.empty:
             return None, f"No data available for {ticker}."
-        if "Adj Close" not in data.columns:
-            return None, f"'Adj Close' column not found for {ticker}."
-        returns = data["Adj Close"].pct_change().dropna()
+
+        # Check for the column to use
+        price_column = None
+        if "Adj Close" in data.columns:
+            price_column = "Adj Close"
+        elif "Close" in data.columns:
+            price_column = "Close"
+        else:
+            return None, f"No suitable price column ('Adj Close' or 'Close') found for {ticker}."
+
+        # Calculate returns
+        returns = data[price_column].pct_change().dropna()
         return returns, None
     except Exception as e:
         return None, f"Error fetching data for {ticker}: {e}"
+
 
 def generate_quantstats_report(returns, benchmark_returns, report_type):
     """Generate QuantStats report."""
