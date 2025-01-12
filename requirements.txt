@@ -1,7 +1,4 @@
-altair
-pandas
-streamlit
-vectorbt
-quantstats
-weasyprint
-matplotlib
+streamlit>=1.32.0
+yfinance>=0.2.36
+quantstats>=0.0.61
+pandas>=2.2.0
