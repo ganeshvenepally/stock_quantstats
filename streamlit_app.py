@@ -99,22 +99,28 @@ def align_data(stock_data, benchmark_data):
     
     return stock_data, benchmark_data
 
-def generate_report(stock_data, benchmark_data, report_type, output_file):
-    """Wrapper function to generate reports with error handling"""
+def generate_quantstats_report(stock_data, benchmark_data, report_type):
+    """Generate QuantStats report and return HTML content directly"""
     try:
-        # Align the data first
-        stock_data, benchmark_data = align_data(stock_data, benchmark_data)
+        # Create a StringIO object to capture the HTML output
+        from io import StringIO
+        output = StringIO()
         
+        # Generate the report based on type
         if report_type == "Basic":
-            qs.reports.basic(stock_data, benchmark_data, output=output_file)
+            qs.reports.basic(stock_data, benchmark_data, output=output)
         elif report_type == "Full":
-            qs.reports.full(stock_data, benchmark_data, output=output_file)
+            qs.reports.full(stock_data, benchmark_data, output=output)
         else:  # Detailed
-            qs.reports.html(stock_data, benchmark_data, output=output_file)
-        return True
+            qs.reports.html(stock_data, benchmark_data, output=output)
+        
+        # Get the HTML content
+        html_content = output.getvalue()
+        output.close()
+        
+        return html_content, None
     except Exception as e:
-        st.error(f"Error generating report: {str(e)}")
-        return False
+        return None, str(e)
 
 if st.button("Generate Report"):
     with st.spinner(f"Fetching data for {ticker}..."):
@@ -131,19 +137,20 @@ if st.button("Generate Report"):
                 # Display data info
                 st.info(f"Retrieved {len(stock_data)} data points for {ticker} and {len(benchmark_data)} for {benchmark}")
                 
-                # Create temporary directory for report
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    report_path = os.path.join(tmpdir, f"{ticker}_report.html")
+                # Align the data
+                stock_data, benchmark_data = align_data(stock_data, benchmark_data)
+                
+                with st.spinner("Generating report..."):
+                    # Generate the report
+                    html_content, error = generate_quantstats_report(stock_data, benchmark_data, report_type)
                     
-                    with st.spinner("Generating report..."):
-                        if generate_report(stock_data, benchmark_data, report_type, report_path):
-                            try:
-                                with open(report_path, 'r', encoding='utf-8') as f:
-                                    report_html = f.read()
-                                # Display the report
-                                st.components.v1.html(report_html, height=800, scrolling=True)
-                            except Exception as e:
-                                st.error(f"Error reading report file: {str(e)}")
+                    if error:
+                        st.error(f"Error generating report: {error}")
+                    elif html_content:
+                        # Display the report directly
+                        st.components.v1.html(html_content, height=800, scrolling=True)
+                    else:
+                        st.error("Failed to generate report content")
 
 # Add information about the app
 st.markdown("---")
