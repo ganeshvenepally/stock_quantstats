@@ -85,9 +85,6 @@ def download_stock_data(ticker, start_date, end_date):
     except Exception as e:
         return None, f"Error fetching data for {ticker}: {e}"
 
-
-
-
 def generate_quantstats_report(returns, benchmark_returns, report_type):
     """Generate QuantStats report."""
     try:
@@ -116,12 +113,30 @@ if st.button("Generate Report"):
             st.info(f"Fetched {len(stock_returns)} data points for {ticker}.")
             st.info(f"Fetched {len(benchmark_returns)} data points for {benchmark}.")
 
+            # Convert benchmark to returns series or None
+            if benchmark_returns is not None:
+                benchmark = benchmark_returns
+            else:
+                benchmark = None
+
             with st.spinner("Generating QuantStats report..."):
-                report_content = generate_quantstats_report(stock_returns, benchmark_returns, report_type)
-                if report_content:
-                    st.components.v1.html(report_content, height=800, scrolling=True)
-                else:
-                    st.error("Failed to generate report.")
+                try:
+                    # Generate the report
+                    if report_type == "Detailed":
+                        html_content = qs.reports.html(stock_returns, benchmark=benchmark, output=None)
+                    elif report_type == "Full":
+                        html_content = qs.reports.full(stock_returns, benchmark=benchmark, output=None)
+                    else:
+                        html_content = qs.reports.metrics(stock_returns, benchmark=benchmark, mode="basic")
+
+                    # Display the report
+                    if html_content:
+                        st.components.v1.html(html_content, height=800, scrolling=True)
+                    else:
+                        st.error("Failed to generate report.")
+                except Exception as e:
+                    st.error(f"Error generating QuantStats report: {e}")
+
 
 st.markdown("---")
 st.markdown("""
