@@ -2,9 +2,8 @@ import streamlit as st
 import yfinance as yf
 import quantstats as qs
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
-import tempfile
-import os
 import warnings
 
 # Suppress warnings
@@ -75,86 +74,102 @@ def get_stock_data(ticker, start_date, end_date):
             return None, f"No data found for {ticker}"
             
         # Convert index timezone to UTC and then remove timezone info
-        df.index = df.index.tz_convert('UTC').tz_localize(None)
+        if df.index.tz is not None:
+            df.index = df.index.tz_convert('UTC').tz_localize(None)
         
         # Try different possible column names
         if 'Adj Close' in df.columns:
-            return df['Adj Close'].resample('D').last().fillna(method='ffill'), None
+            prices = df['Adj Close']
         elif 'Close' in df.columns:
-            return df['Close'].resample('D').last().fillna(method='ffill'), None
+            prices = df['Close']
         else:
             return None, f"Could not find price data for {ticker}"
+            
+        # Calculate returns
+        returns = prices.pct_change().fillna(0)
+        
+        return returns, None
             
     except Exception as e:
         return None, str(e)
 
-def prepare_data(stock_data, benchmark_data):
-    """Prepare and align data for QuantStats"""
-    # Convert to daily returns
-    stock_returns = stock_data.pct_change().dropna()
-    benchmark_returns = benchmark_data.pct_change().dropna()
-    
-    # Get common dates
-    common_dates = stock_returns.index.intersection(benchmark_returns.index)
-    
-    # Reindex both series to common dates
-    stock_returns = stock_returns[common_dates]
-    benchmark_returns = benchmark_returns[common_dates]
-    
-    return stock_returns, benchmark_returns
-
-def generate_quantstats_report(stock_data, benchmark_data, report_type):
-    """Generate QuantStats report and return HTML content directly"""
+def generate_basic_report(returns, benchmark_returns):
+    """Generate basic metrics report"""
     try:
-        # Prepare data
-        stock_returns, benchmark_returns = prepare_data(stock_data, benchmark_data)
+        metrics = pd.DataFrame(columns=['Metric', 'Value'])
         
-        # Create a StringIO object to capture the HTML output
+        # Calculate basic metrics
+        metrics.loc[len(metrics)] = ['Total Return', f"{(returns + 1).prod() - 1:.2%}"]
+        metrics.loc[len(metrics)] = ['Annual Volatility', f"{returns.std() * np.sqrt(252):.2%}"]
+        metrics.loc[len(metrics)] = ['Sharpe Ratio', f"{qs.stats.sharpe(returns):.2f}"]
+        metrics.loc[len(metrics)] = ['Max Drawdown', f"{qs.stats.max_drawdown(returns):.2%}"]
+        metrics.loc[len(metrics)] = ['Win Rate', f"{(returns > 0).mean():.2%}"]
+        metrics.loc[len(metrics)] = ['Best Day', f"{returns.max():.2%}"]
+        metrics.loc[len(metrics)] = ['Worst Day', f"{returns.min():.2%}"]
+        
+        # Convert to HTML
+        html = f"""
+        <div style='padding: 20px'>
+            <h2>Basic Performance Report for {ticker}</h2>
+            {metrics.to_html(index=False, escape=False, classes='table table-striped')}
+        </div>
+        """
+        return html
+        
+    except Exception as e:
+        raise Exception(f"Error generating basic report: {str(e)}")
+
+def generate_quantstats_report(returns, benchmark_returns, report_type):
+    """Generate QuantStats report and return HTML content"""
+    try:
         from io import StringIO
         output = StringIO()
         
-        # Generate the report based on type
         if report_type == "Basic":
-            qs.reports.basic(stock_returns, benchmark_returns, output=output)
-        elif report_type == "Full":
-            qs.reports.full(stock_returns, benchmark_returns, output=output)
-        else:  # Detailed
-            qs.reports.html(stock_returns, benchmark_returns, output=output)
-        
-        # Get the HTML content
+            return generate_basic_report(returns, benchmark_returns)
+        else:
+            # For Full and Detailed reports, use QuantStats
+            qs.reports.html(
+                returns, 
+                benchmark_returns,
+                output=output,
+                title=f"{ticker} Analysis vs {benchmark}"
+            )
+            
         html_content = output.getvalue()
         output.close()
+        return html_content
         
-        return html_content, None
     except Exception as e:
-        return None, str(e)
+        raise Exception(f"Error generating report: {str(e)}")
 
 if st.button("Generate Report"):
     with st.spinner(f"Fetching data for {ticker}..."):
         # Fetch stock data
-        stock_data, stock_error = get_stock_data(ticker, start_date, end_date)
+        stock_returns, stock_error = get_stock_data(ticker, start_date, end_date)
         if stock_error:
             st.error(f"Error fetching {ticker} data: {stock_error}")
         else:
             # Fetch benchmark data
-            benchmark_data, bench_error = get_stock_data(benchmark, start_date, end_date)
+            benchmark_returns, bench_error = get_stock_data(benchmark, start_date, end_date)
             if bench_error:
                 st.error(f"Error fetching benchmark data: {bench_error}")
             else:
                 # Display data info
-                st.info(f"Retrieved {len(stock_data)} data points for {ticker} and {len(benchmark_data)} for {benchmark}")
+                st.info(f"Retrieved {len(stock_returns)} data points for {ticker} and {len(benchmark_returns)} for {benchmark}")
                 
                 with st.spinner("Generating report..."):
-                    # Generate the report
-                    html_content, error = generate_quantstats_report(stock_data, benchmark_data, report_type)
-                    
-                    if error:
-                        st.error(f"Error generating report: {error}")
-                    elif html_content:
-                        # Display the report directly
-                        st.components.v1.html(html_content, height=800, scrolling=True)
-                    else:
-                        st.error("Failed to generate report content")
+                    try:
+                        # Generate the report
+                        html_content = generate_quantstats_report(stock_returns, benchmark_returns, report_type)
+                        
+                        if html_content:
+                            # Display the report
+                            st.components.v1.html(html_content, height=800, scrolling=True)
+                        else:
+                            st.error("Failed to generate report content")
+                    except Exception as e:
+                        st.error(f"Error generating report: {str(e)}")
 
 # Add information about the app
 st.markdown("---")
