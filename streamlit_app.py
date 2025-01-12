@@ -63,14 +63,30 @@ report_type = st.radio(
 def download_stock_data(ticker, start_date, end_date):
     """Download stock data using yfinance and convert to returns"""
     try:
-        # Download data using yfinance
-        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        # Create a Ticker object
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Get historical data
+        df = ticker_obj.history(start=start_date, end=end_date)
         
         if df.empty:
             return None, f"No data found for {ticker}"
+            
+        # Debug info
+        st.write(f"Available columns for {ticker}: {df.columns.tolist()}")
         
-        # Calculate returns from Adj Close prices
-        returns = df['Adj Close'].pct_change()
+        # Try different possible column names
+        price_column = None
+        for col in ['Adj Close', 'Close', 'adj close', 'close']:
+            if col in df.columns:
+                price_column = col
+                break
+                
+        if price_column is None:
+            return None, f"Could not find price data columns for {ticker}. Available columns: {', '.join(df.columns)}"
+        
+        # Calculate returns
+        returns = df[price_column].pct_change()
         returns = returns.dropna()
         
         # Convert index timezone to UTC and then remove timezone info
@@ -80,7 +96,7 @@ def download_stock_data(ticker, start_date, end_date):
         return returns, None
             
     except Exception as e:
-        return None, str(e)
+        return None, f"Error downloading data: {str(e)}"
 
 def generate_basic_report(returns, benchmark_returns):
     """Generate basic metrics report"""
