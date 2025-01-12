@@ -1,47 +1,64 @@
 import streamlit as st
-import quantstats as qs
 import yfinance as yf
-from datetime import datetime
+import quantstats as qs
+import os
 
-# Set page config
-st.set_page_config(page_title="ETF Quantstats Report", layout="wide")
+def main():
+    # Streamlit app title
+    st.title("QuantStats Report Generator")
 
-# Sidebar - Collects user input
-etf_input = st.sidebar.text_input("Enter ETF symbol", value="SPY").upper()
-benchmark_input = st.sidebar.text_input("Enter Benchmark symbol", value="QQQ").upper()
-start_date = st.sidebar.date_input("Start Date", datetime(2010, 1, 1))
-end_date = st.sidebar.date_input("End Date", datetime.now())
+    # Input field for the stock/ETF ticker
+    ticker = st.text_input("Enter the Stock/ETF ticker (Yahoo Finance):", "AAPL")
 
-# Download historical data
-@st.cache
-def load_data(ticker, start_date, end_date):
-    data = yf.download(ticker, start=start_date, end=end_date)
-    return data
+    # Input field for the start and end dates
+    start_date = st.date_input("Start Date:", value=None)
+    end_date = st.date_input("End Date:", value=None)
 
-try:
-    # Load ETF and Benchmark data
-    etf_data = load_data(etf_input, start_date, end_date)
-    benchmark_data = load_data(benchmark_input, start_date, end_date)
+    # Button to generate report
+    if st.button("Generate QuantStats Report"):
+        if not ticker:
+            st.error("Please enter a valid ticker.")
+        elif not start_date or not end_date:
+            st.error("Please select both start and end dates.")
+        else:
+            try:
+                # Fetch historical stock data
+                st.write(f"Fetching data for {ticker}...")
+                data = yf.download(ticker, start=start_date, end=end_date)
 
-    if not etf_data.empty and not benchmark_data.empty:
-        # Display some basic information about the ETF and Benchmark
-        st.write(f"ETF Symbol: {etf_input} | Benchmark Symbol: {benchmark_input}")
-        st.write("ETF Historical Data:")
-        st.line_chart(etf_data['Close'])
+                if data.empty:
+                    st.error("No data found for the given ticker and date range.")
+                else:
+                    # Calculate daily returns
+                    st.write("Calculating returns...")
+                    returns = data["Adj Close"].pct_change().dropna()
 
-        st.write("Benchmark Historical Data:")
-        st.line_chart(benchmark_data['Close'])
+                    # Generate QuantStats report
+                    st.write("Generating QuantStats report...")
 
-        # Generate and display Quantstats report
-        st.header("Quantstats Report")
+                    report_path = f"quantstats_report_{ticker}.html"
+                    qs.reports.html(returns, output=report_path, title=f"QuantStats Report for {ticker}")
 
-        # Creating combined returns for better comparison
-        combined_returns = qs.utils.make_index(etf_data['Close']).pct_change().fillna(0)
-        benchmark_returns = qs.utils.make_index(benchmark_data['Close']).pct_change().fillna(0)
-        
-        # Benchmarked Report
-        qs.reports.html(combined_returns, benchmark=benchmark_returns, output='streamlit')
-    else:
-        st.error("Error: No data found for the specified symbols. Please try another one.")
-except Exception as e:
-    st.error(f"An error occurred: {e}")
+                    # Display link to download the report
+                    st.success("Report generated successfully!")
+                    with open(report_path, "rb") as file:
+                        st.download_button(
+                            label="Download QuantStats Report",
+                            data=file,
+                            file_name=f"QuantStats_Report_{ticker}.html",
+                            mime="text/html",
+                        )
+
+                    # Show preview of the report in an iframe
+                    st.write("Preview of the QuantStats Report:")
+                    with open(report_path, "r") as f:
+                        st.components.v1.html(f.read(), height=800, scrolling=True)
+
+                    # Clean up the generated HTML file
+                    os.remove(report_path)
+
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
