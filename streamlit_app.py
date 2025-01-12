@@ -51,7 +51,12 @@ report_type = st.radio(
 def download_stock_data(ticker, start_date, end_date):
     """Download stock data from Yahoo Finance and calculate returns."""
     try:
+        # Download the data
         data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+
+        # Debug: Show available columns
+        st.write(f"Available columns for {ticker}: {list(data.columns)}")
+
         if data.empty:
             return None, f"No data available for {ticker}."
 
@@ -69,6 +74,7 @@ def download_stock_data(ticker, start_date, end_date):
         return returns, None
     except Exception as e:
         return None, f"Error fetching data for {ticker}: {e}"
+
 
 
 def generate_quantstats_report(returns, benchmark_returns, report_type):
